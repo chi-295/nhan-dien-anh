@@ -3,129 +3,94 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import os
-import cv2 # Thư viện xử lý ảnh và video
+import cv2
+import tempfile
 
-# Cấu hình trang
-st.set_page_config(page_title="AI Image & Video Classifier", layout="centered")
+# Cấu hình giao diện
+st.set_page_config(page_title="AI Recognition Pro", layout="centered")
+st.title("🚀 Ứng dụng nhận diện Ảnh & Video AI")
+st.write("Mô hình sử dụng: **MobileNetV2**")
 
-st.title("🚀 Ứng dụng Nhận diện Ảnh & Video AI")
-st.write("Phân tích hình ảnh và video để dự đoán đối tượng.")
-
-# --- PHẦN XỬ LÝ ĐƯỜNG DẪN MÔ HÌNH ---
+# --- XỬ LÝ MÔ HÌNH ---
 BASE_DIR = os.path.dirname(__file__)
+# Đã sửa đường dẫn theo tên thư mục 'model' của bạn
 MODEL_PATH = os.path.join(BASE_DIR, "model", "MobileNetV2.keras")
 
 @st.cache_resource
-def load_model_safe():
+def load_model_ai():
     if not os.path.exists(MODEL_PATH):
-        st.error(f"⚠️ Lỗi: Không tìm thấy file mô hình tại đường dẫn: `{MODEL_PATH}`")
-        st.info("Mẹo: Kiểm tra thư mục 'model' và tên file 'MobileNetV2.keras' trên GitHub.")
+        st.error(f"❌ Không tìm thấy mô hình tại: {MODEL_PATH}")
         return None
     try:
-        model = tf.keras.model.load_model(MODEL_PATH, compile=False)
-        return model
+        # Load mô hình và tắt compile để tránh lỗi phiên bản thư viện
+        return tf.keras.models.load_model(MODEL_PATH, compile=False)
     except Exception as e:
-        st.error(f"❌ Không thể load mô hình: {e}")
+        st.error(f"Lỗi khi tải file .keras: {e}")
         return None
 
-# Load mô hình
-model = load_model_safe()
-if model is None:
-    st.stop() # Dừng ứng dụng nếu mô hình không load được
+model = load_model_ai()
 
-# --- TIỀN XỬ LÝ ẢNH CHUNG ---
-def preprocess_image_for_model(image_array, target_size=(224, 224)):
-    """Tiền xử lý mảng ảnh cho MobileNetV2"""
-    img_pil = Image.fromarray(image_array) # Chuyển numpy array về PIL Image
-    img_resized = img_pil.resize(target_size)
+# --- HÀM TIỀN XỬ LÝ ---
+def prepare_image(img_pil):
+    """Chuyển đổi ảnh về định dạng MobileNetV2 yêu cầu (224x224)"""
+    img_resized = img_pil.resize((224, 224))
     img_array = tf.keras.preprocessing.image.img_to_array(img_resized)
-    img_array = np.expand_dims(img_array, axis=0) # Thêm batch dimension
+    img_array = np.expand_dims(img_array, axis=0)
     return tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
 
-# --- KHU VỰC UPLOAD FILE ---
-uploaded_file = st.file_uploader(
-    "Tải lên ảnh (jpg, png) hoặc video (mp4, mov, avi)",
-    type=["jpg", "png", "jpeg", "mp4", "mov", "avi"]
-)
+# --- GIAO DIỆN TẢI FILE ---
+uploaded_file = st.file_uploader("Kéo thả Ảnh hoặc Video vào đây", type=["jpg", "png", "jpeg", "mp4", "mov", "avi"])
 
-if uploaded_file is not None:
-    file_type = uploaded_file.type.split('/')[0] # Lấy "image" hoặc "video"
-    
-    if file_type == "image":
-        st.subheader("Phân tích ảnh:")
-        img = Image.open(uploaded_file).convert('RGB')
-        st.image(img, caption="Ảnh bạn đã tải lên", use_container_width=True)
+if uploaded_file and model:
+    # Kiểm tra xem là ảnh hay video
+    is_video = uploaded_file.type.startswith('video')
+
+    if not is_video:
+        # XỬ LÝ ẢNH
+        image = Image.open(uploaded_file).convert('RGB')
+        st.image(image, caption="Ảnh đã tải lên", use_container_width=True)
         
-        # Tiền xử lý và dự đoán
-        img_array_np = np.array(img) # Chuyển PIL Image sang numpy array
-        processed_img = preprocess_image_for_model(img_array_np)
-        
-        if st.button("🔍 Dự đoán ảnh"):
-            with st.spinner('Đang phân tích ảnh...'):
-                prediction = model.predict(processed_img)
-                class_idx = np.argmax(prediction)
-                confidence = np.max(prediction) * 100
+        if st.button("🔍 Dự đoán Ảnh"):
+            with st.spinner("Đang phân tích..."):
+                processed_img = prepare_image(image)
+                preds = model.predict(processed_img)
+                label = np.argmax(preds)
+                score = np.max(preds) * 100
                 
                 st.divider()
-                st.subheader("Kết quả dự đoán:")
-                st.success(f"**Nhãn dự đoán:** {class_idx}")
-                st.info(f"**Độ tin cậy:** {confidence:.2f}%")
-
-    elif file_type == "video":
-        st.subheader("Phân tích video:")
-        st.video(uploaded_file) # Hiển thị video lên web
-        
-        # Lưu video tạm thời để OpenCV có thể đọc
-        t_file = tempfile.NamedTemporaryFile(delete=False) 
-        t_file.write(uploaded_file.read())
-        
-        if st.button("▶️ Bắt đầu phân tích video (từng khung hình)"):
-            with st.spinner("Đang phân tích video... (Quá trình này có thể mất thời gian tùy độ dài video)"):
+                st.success(f"### Kết quả: Nhãn {label}")
+                st.info(f"Độ tin cậy: {score:.2f}%")
+    
+    else:
+        # XỬ LÝ VIDEO
+        st.video(uploaded_file)
+        if st.button("▶️ Phân tích Video"):
+            with st.spinner("Đang xử lý khung hình chính..."):
+                # Tạo file tạm vì OpenCV không đọc trực tiếp được file upload từ Streamlit
+                t_file = tempfile.NamedTemporaryFile(delete=False)
+                t_file.write(uploaded_file.read())
+                
                 cap = cv2.VideoCapture(t_file.name)
+                # Lấy khung hình ở giữa video để có độ chính xác cao nhất
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
                 
-                predictions_list = []
-                frame_count = 0
-                
-                # Tạo placeholder để cập nhật kết quả liên tục
-                prediction_text = st.empty()
-                progress_bar = st.progress(0)
-
-                while cap.isOpened():
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    
-                    # Chuyển đổi màu từ BGR (OpenCV) sang RGB (TensorFlow/PIL)
+                ret, frame = cap.read()
+                if ret:
+                    # Chuyển BGR (OpenCV) sang RGB (PIL)
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    img_pil = Image.fromarray(frame_rgb)
                     
-                    # Tiền xử lý và dự đoán từng khung hình
-                    processed_frame = preprocess_image_for_model(frame_rgb)
-                    prediction = model.predict(processed_frame, verbose=0) # verbose=0 để tránh in log nhiều
+                    processed_frame = prepare_image(img_pil)
+                    preds = model.predict(processed_frame)
+                    label = np.argmax(preds)
+                    score = np.max(preds) * 100
                     
-                    class_idx = np.argmax(prediction)
-                    confidence = np.max(prediction)
-                    
-                    predictions_list.append((class_idx, confidence))
-                    frame_count += 1
-                    
-                    # Cập nhật thanh tiến trình và kết quả dự đoán
-                    if frame_count % 10 == 0: # Cập nhật mỗi 10 frame để không bị quá tải
-                        current_pred_idx, current_pred_conf = predictions_list[-1]
-                        prediction_text.info(f"Đang xử lý khung hình {frame_count}... Dự đoán hiện tại: Nhãn **{current_pred_idx}** (Độ tin cậy: {current_pred_conf*100:.2f}%)")
-                        progress_bar.progress(min(int(frame_count / cap.get(cv2.CAP_PROP_FRAME_COUNT) * 100), 100))
+                    st.divider()
+                    st.success(f"### Kết quả Video: Nhãn {label}")
+                    st.info(f"Độ tin cậy (tại khung hình giữa): {score:.2f}%")
+                else:
+                    st.error("Không thể đọc được video này.")
                 
                 cap.release()
-                os.unlink(t_file.name) # Xóa file tạm thời
-                
-                st.divider()
-                if predictions_list:
-                    # Phân tích kết quả tổng thể (ví dụ: nhãn xuất hiện nhiều nhất)
-                    from collections import Counter
-                    most_common_pred = Counter([p[0] for p in predictions_list]).most_common(1)[0]
-                    st.success(f"Phân tích video hoàn tất! Nhãn xuất hiện nhiều nhất: **{most_common_pred[0]}** (số lần: {most_common_pred[1]})")
-                    st.info("Để phân tích chi tiết hơn (nhãn thay đổi theo thời gian), bạn cần lưu trữ và hiển thị kết quả phức tạp hơn.")
-                else:
-                    st.warning("Không có khung hình nào được phân tích từ video.")
-
-# --- CHÚ THÍCH DƯỚI TRANG ---
-st.caption("Lưu ý: Nếu kết quả ra nhãn số, bạn cần tạo danh sách tên nhãn để hiển thị chữ.")
+                os.unlink(t_file.name) # Xóa file tạm để nhẹ bộ nhớ
