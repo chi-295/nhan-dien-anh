@@ -2,44 +2,37 @@ import streamlit as st
 import tensorflow as tf
 import numpy as np
 from PIL import Image
-import os
 
-st.title("Phần mềm nhận diện 5 mô hình AI")
+st.title("Ứng dụng Nhận diện Ảnh AI")
 
-# Danh sách mô hình
-MODELS = {
-    "MobileNetV2": "models/MobileNetV2.keras",
-    "InceptionV3": "models/InceptionV3.keras",
-    "VGG16": "models/VGG16.keras",
-    "ResNet50": "models/ResNet50.keras",
-    "EfficientNetB0": "models/EfficientNetB0.keras"
-}
+# Đường dẫn đến mô hình duy nhất của bạn
+MODEL_PATH = "models/MobileNetV2.keras"
 
 @st.cache_resource
-def load_model_safe(name):
-    path = MODELS[name]
-    try:
-        # Chìa khóa: compile=False để không cần quan tâm phiên bản optimizer
-        return tf.keras.models.load_model(path, compile=False)
-    except Exception as e:
-        st.error(f"Lỗi load {name}: {e}")
-        return None
+def load_model():
+    # compile=False giúp tránh lỗi khác biệt phiên bản thư viện
+    return tf.keras.models.load_model(MODEL_PATH, compile=False)
 
-selected = st.selectbox("Chọn mô hình:", list(MODELS.keys()))
-model = load_model_safe(selected)
+model = load_model()
 
-file = st.file_uploader("Chọn ảnh từ máy tính", type=["jpg", "png"])
+file = st.file_uploader("Tải ảnh lên để AI dự đoán", type=["jpg", "png", "jpeg"])
 
-if file and model:
+if file:
     img = Image.open(file).convert('RGB')
-    st.image(img, width=300)
+    st.image(img, width=300, caption="Ảnh bạn vừa tải lên")
     
-    # Tiền xử lý
-    size = (299, 299) if selected == "InceptionV3" else (224, 224)
-    img_resized = img.resize(size)
-    img_array = np.array(img_resized) / 255.0
+    # Tiền xử lý ảnh (MobileNetV2 dùng size 224x224)
+    img_resized = img.resize((224, 224))
+    img_array = tf.keras.preprocessing.image.img_to_array(img_resized)
     img_array = np.expand_dims(img_array, axis=0)
     
-    if st.button("Dự đoán ngay"):
+    # Chuẩn hóa theo chuẩn MobileNetV2
+    img_array = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
+    
+    if st.button("Bấm để dự đoán"):
         pred = model.predict(img_array)
-        st.success(f"Kết quả dự đoán nhãn số: {np.argmax(pred)}")
+        class_idx = np.argmax(pred)
+        confidence = np.max(pred) * 100
+        
+        st.success(f"Kết quả: Nhãn số {class_idx}")
+        st.info(f"Độ tin cậy: {confidence:.2f}%")
