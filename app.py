@@ -6,100 +6,82 @@ import os
 import cv2
 import tempfile
 
-# Cấu hình giao diện chuẩn hiện đại
-st.set_page_config(
-    page_title="AI Vision Pro", 
-    page_icon="🤖", 
-    layout="centered"
-)
+# Cấu hình giao diện
+st.set_page_config(page_title="AI Vision Pro", page_icon="🤖", layout="centered")
 
-# Custom CSS để giao diện chuyên nghiệp hơn
+# CSS tùy chỉnh để làm đẹp giao diện
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 20px; height: 3em; background-color: #007bff; color: white; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; border-radius: 5px; background-color: #f0f2f6; }
+    .stMetric { background-color: #ffffff; padding: 10px; border-radius: 10px; border: 1px solid #e6e9ef; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🤖 Hệ thống Nhận diện Ảnh & Video AI")
-st.write("Giải pháp phân tích hình ảnh dựa trên kiến trúc **MobileNetV2**.")
+st.title("🤖 Trí tuệ Nhân tạo Nhận diện Ảnh & Video")
+st.info("Hệ thống đang chạy trên môi trường Python 3.11 & TensorFlow 2.15")
 
-# --- XỬ LÝ MÔ HÌNH ---
+# --- QUẢN LÝ MÔ HÌNH ---
 BASE_DIR = os.path.dirname(__file__)
 MODEL_PATH = os.path.join(BASE_DIR, "MobileNetV2.keras")
 
 @st.cache_resource
-def load_model_optimized():
+def load_model_ai():
     if not os.path.exists(MODEL_PATH):
-        st.error(f"❌ Không tìm thấy file: {MODEL_PATH}")
+        st.error(f"❌ Không tìm thấy file mô hình tại thư mục gốc!")
         return None
     try:
-        # Sử dụng tf.keras để load nhằm khắc phục lỗi xung đột Layer trên Keras 3
-        model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-        return model
+        # Load mô hình bằng tf.keras để tránh lỗi cấu trúc Layer trên môi trường mới
+        return tf.keras.models.load_model(MODEL_PATH, compile=False)
     except Exception as e:
-        st.error(f"❌ Lỗi cấu trúc mô hình: {e}")
-        st.info("💡 Mẹo: Hệ thống đang thử xử lý xung đột phiên bản Keras. Hãy đảm bảo bạn đã Reboot App sau khi sửa requirements.txt.")
+        st.error(f"❌ Lỗi nạp mô hình: {str(e)}")
         return None
 
-model = load_model_optimized()
+model = load_model_ai()
 
-# --- KHU VỰC CHỨC NĂNG ---
+# --- XỬ LÝ DỮ LIỆU ---
+def preprocess(image):
+    img = image.resize((224, 224))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    return tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
+
 if model:
-    tab1, tab2 = st.tabs(["📸 Phân tích Ảnh", "🎥 Phân tích Video"])
+    tab1, tab2 = st.tabs(["🖼️ Nhận diện Ảnh", "🎥 Nhận diện Video"])
 
     with tab1:
-        uploaded_img = st.file_uploader("Kéo thả ảnh vào đây", type=["jpg", "png", "jpeg"], key="img")
-        if uploaded_img:
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                img = Image.open(uploaded_img).convert('RGB')
-                st.image(img, caption="Ảnh gốc", use_container_width=True)
-            
-            with col2:
-                if st.button("🚀 Bắt đầu dự đoán", key="btn_img"):
-                    with st.spinner("Đang phân tích..."):
-                        # Tiền xử lý chuẩn MobileNetV2
-                        img_input = np.array(img.resize((224, 224)))
-                        img_input = tf.keras.applications.mobilenet_v2.preprocess_input(np.expand_dims(img_input, axis=0))
-                        
-                        preds = model.predict(img_input)
-                        label = np.argmax(preds)
-                        confidence = np.max(preds) * 100
-                        
-                        st.metric("Nhãn dự đoán", f"Số {label}")
-                        st.metric("Độ tin cậy", f"{confidence:.2f}%")
-                        if confidence > 80: st.balloons()
+        file_img = st.file_uploader("Chọn ảnh (JPG, PNG)...", type=["jpg", "png", "jpeg"])
+        if file_img:
+            img = Image.open(file_img).convert('RGB')
+            st.image(img, use_container_width=True)
+            if st.button("🚀 Phân tích Ảnh"):
+                processed = preprocess(img)
+                preds = model.predict(processed)
+                label = np.argmax(preds)
+                conf = np.max(preds) * 100
+                
+                col1, col2 = st.columns(2)
+                col1.metric("Nhãn dự đoán", f"Số {label}")
+                col2.metric("Độ tin cậy", f"{conf:.2f}%")
 
     with tab2:
-        uploaded_vid = st.file_uploader("Tải video lên", type=["mp4", "mov", "avi"], key="vid")
-        if uploaded_vid:
-            st.video(uploaded_vid)
-            if st.button("▶️ Phân tích Video", key="btn_vid"):
+        file_vid = st.file_uploader("Chọn video (MP4, MOV)...", type=["mp4", "mov"])
+        if file_vid:
+            st.video(file_vid)
+            if st.button("▶️ Phân tích Video"):
                 with st.spinner("Đang trích xuất khung hình..."):
                     t_file = tempfile.NamedTemporaryFile(delete=False)
-                    t_file.write(uploaded_vid.read())
-                    
+                    t_file.write(file_vid.read())
                     cap = cv2.VideoCapture(t_file.name)
-                    # Lấy khung hình tại 50% thời lượng video
-                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
-                    
+                    cap.set(cv2.CAP_PROP_POS_MSEC, 1000) # Lấy dữ liệu tại giây thứ 1
                     ret, frame = cap.read()
                     if ret:
                         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        img_input = np.array(Image.fromarray(frame_rgb).resize((224, 224)))
-                        img_input = tf.keras.applications.mobilenet_v2.preprocess_input(np.expand_dims(img_input, axis=0))
-                        
-                        preds = model.predict(img_input)
-                        st.success(f"### Dự đoán: Nhãn {np.argmax(preds)}")
-                        st.progress(float(np.max(preds)))
-                    else:
-                        st.error("Không thể xử lý video.")
+                        processed = preprocess(Image.fromarray(frame_rgb))
+                        preds = model.predict(processed)
+                        st.success(f"Kết quả Video: Nhãn {np.argmax(preds)}")
                     cap.release()
                     os.unlink(t_file.name)
 
-# --- CHÂN TRANG ---
 st.divider()
-st.caption("© 2026 AI Vision Pro - Hệ thống vận hành trên nền tảng TensorFlow & Streamlit.")
+st.caption("Thiết kế bởi Gemini AI - 2026")
